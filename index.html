@@ -4,11 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Our 3D Heart Space</title>
-    <!-- 核心 3D 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
-    
-    <!-- MediaPipe AI 库 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
@@ -26,7 +23,6 @@
         }
         .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
         
-        /* 隐藏视频流但保持运行 */
         #video-container { position: fixed; bottom: 10px; right: 10px; width: 80px; height: 60px; opacity: 0.3; border: 1px solid var(--gold); border-radius: 8px; overflow: hidden; transform: scaleX(-1); display: none; }
         video { width: 100%; height: 100%; object-fit: cover; }
 
@@ -65,12 +61,11 @@
             -webkit-appearance: none;
         }
 
-        /* 手势反馈光圈 */
         #gesture-feedback {
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
             padding: 5px 15px; border-radius: 20px; background: rgba(212,175,55,0.2);
             color: var(--gold); font-size: 12px; border: 1px solid var(--gold);
-            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 20;
+            opacity: 0; transition: opacity 0.5s; pointer-events: none; z-index: 20;
         }
     </style>
 </head>
@@ -78,11 +73,11 @@
 
 <div id="loader">
     <div class="pulse-heart">✨❤️✨</div>
-    <div id="loader-status">正在初始化 AI 艺术空间...</div>
+    <div id="loader-status">正在调校 AI 艺术空间...</div>
     <button id="start-btn" style="display:none;">开启空间</button>
 </div>
 
-<div id="gesture-feedback">检测到手势</div>
+<div id="gesture-feedback">检测中</div>
 
 <div id="ui-container">
     <div class="title">MEMORIES SPACE</div>
@@ -93,7 +88,7 @@
     <video id="webcam" playsinline muted></video>
 </div>
 
-<div id="gesture-hint">🖐️ 五指张开爆炸 | ✊ 握拳聚合<br>📱 倾斜手机互动 | 👆 点击屏幕</div>
+<div id="gesture-hint">🖐️ 明确张开爆炸 | ✊ 明确握拳回收<br>📱 倾斜手机互动 | 👆 点击屏幕交互</div>
 
 <div id="canvas-container"></div>
 
@@ -102,10 +97,10 @@
     let isExploded = false;
     let coreLight;
     let targetRot = { x: 0, y: 0 };
-    let handsAI;
+    let gestureCooldown = 0; // 手势判定冷却
 
     const photoUrls = [
-        '1.jpg', 
+           '1.jpg', 
         '2.jpg',
         '3.jpg', 
         '4.jpg',
@@ -149,11 +144,11 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-        coreLight = new THREE.PointLight(0xffb6c1, 2.5, 60);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        coreLight = new THREE.PointLight(0xffb6c1, 3, 70);
         scene.add(coreLight);
 
-        // 星空背景
+        // 星空
         const starGeo = new THREE.BufferGeometry();
         const starPos = [];
         for(let i=0; i<1500; i++) {
@@ -176,7 +171,7 @@
         for(let i=0; i<COUNT; i++){
             const t = (i/COUNT) * Math.PI * 2;
             const pos = getHeart(t);
-            const geo = new THREE.BoxGeometry(4, 5.2, 0.3);
+            const geo = new THREE.BoxGeometry(4, 5.2, 0.4); // 稍微增加厚度
             
             const texture = textureLoader.load(photoUrls[i % photoUrls.length]);
             const mats = [
@@ -184,8 +179,8 @@
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
-                new THREE.MeshStandardMaterial({map: texture}), 
-                new THREE.MeshStandardMaterial({color: 0x050505})  
+                new THREE.MeshStandardMaterial({map: texture, roughness: 0.4}), 
+                new THREE.MeshStandardMaterial({color: 0x111111})  
             ];
             const mesh = new THREE.Mesh(geo, mats);
             mesh.position.copy(pos);
@@ -194,29 +189,22 @@
             scene.add(mesh);
         }
 
-        document.getElementById('loader-status').innerText = "资源已就绪，建议在光线充足处使用";
+        document.getElementById('loader-status').innerText = "加载完毕，追求更丝滑的体验";
         document.getElementById('start-btn').style.display = "block";
         animate();
     }
 
     document.getElementById('start-btn').onclick = async function() {
-        this.innerText = "请求权限中...";
-        
-        // 尝试启动陀螺仪
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
         }
-
         window.addEventListener('deviceorientation', e => {
             if(e.gamma !== null) {
-                targetRot.y = (e.gamma / 45);
-                targetRot.x = (e.beta / 45 - 1.5);
+                targetRot.y = (e.gamma / 50);
+                targetRot.x = (e.beta / 50 - 1.5);
             }
         });
-
-        // 尝试启动相机和 AI
         await setupAI();
-        
         document.getElementById('loader').style.opacity = '0';
         setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
     };
@@ -226,57 +214,75 @@
         const feedback = document.getElementById('gesture-feedback');
 
         try {
-            handsAI = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            handsAI.setOptions({
+            const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+            hands.setOptions({
                 maxNumHands: 1,
                 modelComplexity: 1,
-                minDetectionConfidence: 0.5, // 降低阈值以提高识别率
-                minTrackingConfidence: 0.5
+                minDetectionConfidence: 0.7, // 提高初始检测门槛
+                minTrackingConfidence: 0.7
             });
             
-            handsAI.onResults(res => {
+            hands.onResults(res => {
                 if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                     const lm = res.multiHandLandmarks[0];
-                    
-                    // 核心逻辑：计算指尖到掌心的平均距离
-                    // lm[0] 是手腕, lm[12] 是中指尖
                     const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
                     
-                    // 显示手势反馈
                     feedback.style.opacity = "1";
                     
-                    if(dist > 0.4) {
-                        feedback.innerText = "🖐️ 爆炸";
-                        if(!isExploded) explode();
-                    } else if(dist < 0.25) {
-                        feedback.innerText = "✊ 回收";
-                        if(isExploded) contract();
+                    // 增加防抖判定：只有当 gestureCooldown 计数达到一定值才触发
+                    if(dist > 0.48) { // 提高爆炸阈值，需要手张得更开
+                        feedback.innerText = "🖐️ 准备绽放";
+                        gestureCooldown++;
+                        if(gestureCooldown > 15 && !isExploded) { // 确认 15 帧后爆炸
+                            explode();
+                            gestureCooldown = 0;
+                        }
+                    } else if(dist < 0.22) { // 降低回收阈值，需要拳头握得更紧
+                        feedback.innerText = "✊ 准备回收";
+                        gestureCooldown++;
+                        if(gestureCooldown > 15 && isExploded) {
+                            contract();
+                            gestureCooldown = 0;
+                        }
+                    } else {
+                        feedback.innerText = "✨ 正在观察手势";
+                        gestureCooldown = 0;
                     }
                 } else {
                     feedback.style.opacity = "0";
+                    gestureCooldown = 0;
                 }
             });
 
             const cam = new Camera(video, {
-                onFrame: async () => { await handsAI.send({image: video}); },
+                onFrame: async () => { await hands.send({image: video}); },
                 width: 480, height: 640
             });
-            
             await cam.start();
-            document.getElementById('video-container').style.display = 'block';
-        } catch (e) {
-            console.error("AI 启动失败，将仅支持点击交互:", e);
-        }
+        } catch (e) { console.warn("AI 启动异常"); }
     }
 
     function explode() {
         if (isExploded) return;
         isExploded = true;
         photos.forEach(p => {
-            const dest = new THREE.Vector3((Math.random()-0.5)*130, (Math.random()-0.5)*130, (Math.random()-0.5)*90);
-            new TWEEN.Tween(p.mesh.position).to(dest, 1600).easing(TWEEN.Easing.Exponential.Out).start();
-            new TWEEN.Tween(p.mesh.rotation).to({x: Math.random()*8, y: Math.random()*8, z: Math.random()*8}, 1600).start();
-            p.v.set((Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12);
+            const dest = new THREE.Vector3(
+                (Math.random()-0.5)*140, 
+                (Math.random()-0.5)*140, 
+                (Math.random()-0.5)*100
+            );
+            // 采用更平滑的 Exponential.Out 曲线，时间增加到 2.2秒
+            new TWEEN.Tween(p.mesh.position)
+                .to(dest, 2200)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .start();
+                
+            new TWEEN.Tween(p.mesh.rotation)
+                .to({x: Math.random()*10, y: Math.random()*10, z: Math.random()*10}, 2500)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .start();
+                
+            p.v.set((Math.random()-0.5)*0.08, (Math.random()-0.5)*0.08, (Math.random()-0.5)*0.08);
         });
     }
 
@@ -284,8 +290,16 @@
         if (!isExploded) return;
         isExploded = false;
         photos.forEach(p => {
-            new TWEEN.Tween(p.mesh.position).to(p.homePos, 1300).easing(TWEEN.Easing.Cubic.InOut).start();
-            new TWEEN.Tween(p.mesh.rotation).to(p.homeRot, 1300).easing(TWEEN.Easing.Cubic.InOut).start();
+            new TWEEN.Tween(p.mesh.position)
+                .to(p.homePos, 1800)
+                .easing(TWEEN.Easing.Cubic.InOut)
+                .start();
+                
+            new TWEEN.Tween(p.mesh.rotation)
+                .to(p.homeRot, 1800)
+                .easing(TWEEN.Easing.Cubic.InOut)
+                .start();
+                
             p.v.set(0,0,0);
         });
     }
@@ -302,21 +316,21 @@
         const t = Date.now() * 0.001;
 
         if(!isExploded) {
-            const s = 1 + Math.sin(t*2.8)*0.025;
+            const s = 1 + Math.sin(t*2.2)*0.02; // 呼吸感更慢
             scene.scale.set(s,s,s);
         } else {
             photos.forEach(p => {
                 p.mesh.position.add(p.v);
-                p.mesh.rotation.y += 0.004;
+                p.mesh.rotation.y += 0.003;
             });
         }
 
-        camera.position.x += (targetRot.y * 22 - camera.position.x) * 0.06;
-        camera.position.y += (-targetRot.x * 22 - camera.position.y) * 0.06;
+        camera.position.x += (targetRot.y * 20 - camera.position.x) * 0.05;
+        camera.position.y += (-targetRot.x * 20 - camera.position.y) * 0.05;
         camera.lookAt(0,0,0);
         
-        particles.rotation.y += 0.0008;
-        coreLight.intensity = 2.5 + Math.sin(t*3.5);
+        particles.rotation.y += 0.0005;
+        coreLight.intensity = 2.5 + Math.sin(t*2);
         renderer.render(scene, camera);
     }
 
@@ -330,4 +344,3 @@
 </script>
 </body>
 </html>
-

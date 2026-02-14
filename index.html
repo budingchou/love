@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Our 3D Heart Space</title>
-    <!-- 替换为国内镜像加速源 (Staticfile / BootCDN) -->
-    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/three.js/r128/three.min.js"></script>
-    <script src="https://lf9-cdn-tos.bytecdntp.com/cdn/expire-1-M/tween.js/18.6.4/tween.umd.js"></script>
+    <!-- 恢复为官方标准 CDN 链接 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
     
-    <!-- MediaPipe 库也使用 jsDelivr 的镜像或直接通过特定地址绕过限制 -->
-    <script src="https://fastly.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://fastly.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <!-- 官方 MediaPipe Hands 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
     <style>
         :root { --rose-gold: #b76e79; --gold: #d4af37; }
@@ -75,8 +75,8 @@
 
 <div id="loader">
     <div class="pulse-heart">✨❤️✨</div>
-    <div id="loader-status" style="font-size: 14px; letter-spacing: 2px; line-height: 1.6;">本地网络优化版<br>准备好开启空间了吗？</div>
-    <button id="start-btn">开启纪念空间</button>
+    <div id="loader-status" style="font-size: 14px; letter-spacing: 2px; line-height: 1.6;">AI 核心正在初始化<br>请确保处于网络顺畅的环境</div>
+    <button id="start-btn">开启艺术空间</button>
 </div>
 
 <div id="ui-container">
@@ -99,22 +99,19 @@
     let targetRot = { x: 0, y: 0 };
 
     /**
-     * 在这里添加你的照片 URL
-     * 如果照片在 GitHub 仓库根目录，直接写 '1.jpg'
-     * 也可以使用网络链接
+     * 照片 URL 配置
+     * 已更新为优先读取你上传的 1.jpg
      */
     const photoUrls = [
-        'https://picsum.photos/400/520?random=1',
+        '1.jpg', // 你上传的照片
         'https://picsum.photos/400/520?random=2',
         'https://picsum.photos/400/520?random=3',
         'https://picsum.photos/400/520?random=4',
         'https://picsum.photos/400/520?random=5',
-        'https://picsum.photos/400/520?random=6',
-        'https://picsum.photos/400/520?random=7',
-        'https://picsum.photos/400/520?random=8'
+        'https://picsum.photos/400/520?random=6'
     ];
 
-    const COUNT = 34; // 卡片总数
+    const COUNT = 34; 
 
     function initScene() {
         scene = new THREE.Scene();
@@ -132,7 +129,7 @@
         coreLight = new THREE.PointLight(0xffb6c1, 2.5, 60);
         scene.add(coreLight);
 
-        // 星空
+        // 星空背景
         const starGeo = new THREE.BufferGeometry();
         const starPos = [];
         for(let i=0; i<1500; i++) {
@@ -157,16 +154,16 @@
             const pos = getHeart(t);
             const geo = new THREE.BoxGeometry(4, 5.2, 0.3);
             
-            // 循环使用照片数组中的图片
+            // 循环使用照片数组
             const texture = textureLoader.load(photoUrls[i % photoUrls.length]);
 
             const mats = [
-                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), // 侧面
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
-                new THREE.MeshStandardMaterial({map: texture}), // 正面（显示照片）
-                new THREE.MeshStandardMaterial({color: 0x050505})  // 背面
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
+                new THREE.MeshStandardMaterial({map: texture}), 
+                new THREE.MeshStandardMaterial({color: 0x050505})  
             ];
             const mesh = new THREE.Mesh(geo, mats);
             mesh.position.copy(pos);
@@ -179,7 +176,7 @@
     }
 
     document.getElementById('start-btn').onclick = async function() {
-        this.innerText = "正在激活权限...";
+        this.innerText = "正在激活 AI 模型...";
         this.disabled = true;
         
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -202,14 +199,18 @@
             setTimeout(() => {
                 document.getElementById('loader').style.display = 'none';
             }, 500);
-        }, 1200);
+        }, 1500);
     };
 
     function setupAI() {
         const video = document.getElementById('webcam');
         try {
-            const hands = new Hands({locateFile: (f) => `https://fastly.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6});
+            const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7
+            });
             
             hands.onResults(res => {
                 if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
@@ -225,11 +226,9 @@
                 width: 480, height: 640
             });
             
-            cam.start().catch(() => {
-                console.log("No camera access, touch only.");
-            });
+            cam.start();
         } catch (e) {
-            console.warn("AI models could not be loaded.");
+            console.error("AI Init Error:", e);
         }
     }
 

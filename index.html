@@ -23,7 +23,6 @@
         }
         .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
         
-        /* 预览框修复：确保可见以方便调试 */
         #video-container { 
             position: fixed; 
             bottom: 20px; 
@@ -102,7 +101,7 @@
     <video id="webcam" playsinline muted autoplay></video>
 </div>
 
-<div id="gesture-hint">🖐️ 明确张开爆炸 | ✊ 明确握拳回收<br>请点击按钮后允许摄像头访问</div>
+<div id="gesture-hint">🖐️ 明确张开爆炸 | ✊ 明确握拳回收<br>请在光线充足处尝试</div>
 
 <div id="canvas-container"></div>
 
@@ -185,7 +184,6 @@
     document.getElementById('start-btn').onclick = async function() {
         this.innerText = "授权并启动中...";
         
-        // 1. 尝试显式调起摄像头权限
         try {
             await navigator.mediaDevices.getUserMedia({ video: true });
         } catch (err) {
@@ -193,7 +191,6 @@
             alert("请在浏览器设置中允许摄像头访问以使用感应功能。");
         }
 
-        // 2. 陀螺仪权限
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
         }
@@ -204,7 +201,6 @@
             }
         });
 
-        // 3. 启动 AI
         await setupAI();
         
         document.getElementById('loader').style.opacity = '0';
@@ -220,32 +216,33 @@
             hands.setOptions({
                 maxNumHands: 1,
                 modelComplexity: 1,
-                minDetectionConfidence: 0.6,
-                minTrackingConfidence: 0.6
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
             });
             
             hands.onResults(res => {
                 if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                     const lm = res.multiHandLandmarks[0];
+                    // 计算中指尖到手腕的距离作为判定基准
                     const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
                     feedback.style.opacity = "1";
                     
-                    if(dist > 0.48) { 
-                        feedback.innerText = "🖐️ 正在绽放";
+                    if(dist > 0.45) { 
+                        feedback.innerText = "🖐️ 正在绽放...";
                         gestureCooldown++;
-                        if(gestureCooldown > 12 && !isExploded) {
+                        if(gestureCooldown > 10 && !isExploded) {
                             explode();
                             gestureCooldown = 0;
                         }
-                    } else if(dist < 0.22) { 
-                        feedback.innerText = "✊ 正在回收";
+                    } else if(dist < 0.30) { // 放宽阈值：从 0.22 调高到 0.30，更容易触发回收
+                        feedback.innerText = "✊ 正在收回...";
                         gestureCooldown++;
-                        if(gestureCooldown > 12 && isExploded) {
+                        if(gestureCooldown > 10 && isExploded) {
                             contract();
                             gestureCooldown = 0;
                         }
                     } else {
-                        feedback.innerText = "✨ 已捕捉手部";
+                        feedback.innerText = "✨ 感应中 (保持动作)";
                         gestureCooldown = 0;
                     }
                 } else {

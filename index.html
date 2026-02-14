@@ -1,0 +1,274 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Our 3D Heart Space</title>
+    <!-- 使用全路径 CDN 确保 GitHub 环境兼容性 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <style>
+        :root { --rose-gold: #b76e79; --gold: #d4af37; }
+        body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; }
+        
+        #ui-container {
+            position: absolute;
+            top: 60px; width: 100%;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            color: var(--gold);
+        }
+        .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
+        
+        #video-container {
+            position: absolute;
+            bottom: 30px; left: 20px;
+            width: 80px; height: 100px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--rose-gold);
+            transform: scaleX(-1);
+            background: #111;
+            z-index: 20;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        #gesture-hint {
+            position: absolute;
+            bottom: 40px; width: 100%;
+            text-align: center;
+            color: #fff; opacity: 0.4;
+            font-size: 11px;
+            letter-spacing: 1px;
+            z-index: 5;
+        }
+
+        #loader {
+            position: fixed; inset: 0; background: #020205;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; color: var(--gold);
+        }
+        .pulse-heart {
+            font-size: 48px; animation: pulse 1.2s infinite ease-in-out; margin-bottom: 20px;
+        }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 0.8; } }
+        
+        /* 交互按钮，应对部分浏览器权限 */
+        #start-btn {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background: transparent;
+            border: 1px solid var(--gold);
+            color: var(--gold);
+            border-radius: 20px;
+            cursor: pointer;
+            display: none; /* 仅在权限受阻时显示 */
+        }
+    </style>
+</head>
+<body>
+
+<div id="loader">
+    <div class="pulse-heart">✨❤️✨</div>
+    <div id="loader-status" style="font-size: 13px; letter-spacing: 2px;">初始化 3D 艺术空间...</div>
+    <button id="start-btn">点击进入</button>
+</div>
+
+<div id="ui-container">
+    <div class="title">MEMORIES SPACE</div>
+    <div style="font-size: 11px; opacity: 0.6; margin-top: 8px;">让思念跨越星辰</div>
+</div>
+
+<div id="video-container">
+    <video id="webcam" playsinline muted></video>
+</div>
+
+<div id="gesture-hint">🖐️ 张开爆炸 | ✊ 握拳回收 | 📱 倾斜手机互动</div>
+
+<div id="canvas-container"></div>
+
+<script>
+    let scene, camera, renderer, particles, photos = [];
+    let isExploded = false;
+    let coreLight;
+    let targetRot = { x: 0, y: 0 };
+    const COUNT = 34;
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.015);
+
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 55;
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        coreLight = new THREE.PointLight(0xffb6c1, 2.5, 60);
+        scene.add(coreLight);
+
+        // 星空背景
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = [];
+        for(let i=0; i<2000; i++) {
+            starPos.push((Math.random()-0.5)*250, (Math.random()-0.5)*250, (Math.random()-0.5)*250);
+        }
+        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+        particles = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 0.4, transparent: true, opacity: 0.6}));
+        scene.add(particles);
+
+        // 爱心轨迹
+        const getHeart = (t) => {
+            return new THREE.Vector3(
+                16 * Math.pow(Math.sin(t), 3),
+                13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t),
+                0
+            ).multiplyScalar(1.2);
+        };
+
+        for(let i=0; i<COUNT; i++){
+            const t = (i/COUNT) * Math.PI * 2;
+            const pos = getHeart(t);
+            const geo = new THREE.BoxGeometry(4, 5.2, 0.3);
+            const mats = [
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
+                new THREE.MeshStandardMaterial({color: 0xfffafa, roughness: 0.4}), 
+                new THREE.MeshStandardMaterial({color: 0x050505})
+            ];
+            const mesh = new THREE.Mesh(geo, mats);
+            mesh.position.copy(pos);
+            mesh.lookAt(0,0,10);
+            photos.push({ mesh, homePos: pos.clone(), homeRot: mesh.rotation.clone(), v: new THREE.Vector3() });
+            scene.add(mesh);
+        }
+
+        // 处理 iOS 权限
+        const handlePermissions = () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().catch(console.error);
+            }
+            setupAI();
+        };
+
+        document.getElementById('start-btn').onclick = () => {
+            document.getElementById('start-btn').style.display = 'none';
+            handlePermissions();
+        };
+
+        // 手机倾斜互动
+        window.addEventListener('deviceorientation', e => {
+            if(e.gamma !== null) {
+                targetRot.y = (e.gamma / 45);
+                targetRot.x = (e.beta / 45 - 1.5);
+            }
+        });
+
+        // 触摸兜底
+        window.addEventListener('touchstart', (e) => {
+            if (e.target.tagName !== 'BUTTON') {
+                isExploded ? contract() : explode();
+            }
+        });
+
+        animate();
+        
+        // 自动尝试开启，若失败则显示按钮
+        setTimeout(() => {
+            if(document.getElementById('loader').style.display !== 'none') {
+                document.getElementById('loader-status').innerText = "请点击下方按钮授予权限";
+                document.getElementById('start-btn').style.display = 'block';
+            }
+        }, 3000);
+
+        handlePermissions(); 
+    }
+
+    function explode() {
+        isExploded = true;
+        photos.forEach(p => {
+            const dest = new THREE.Vector3((Math.random()-0.5)*130, (Math.random()-0.5)*130, (Math.random()-0.5)*90);
+            new TWEEN.Tween(p.mesh.position).to(dest, 1600).easing(TWEEN.Easing.Exponential.Out).start();
+            new TWEEN.Tween(p.mesh.rotation).to({x: Math.random()*8, y: Math.random()*8, z: Math.random()*8}, 1600).start();
+            p.v.set((Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12);
+        });
+    }
+
+    function contract() {
+        isExploded = false;
+        photos.forEach(p => {
+            new TWEEN.Tween(p.mesh.position).to(p.homePos, 1300).easing(TWEEN.Easing.Cubic.InOut).start();
+            new TWEEN.Tween(p.mesh.rotation).to(p.homeRot, 1300).easing(TWEEN.Easing.Cubic.InOut).start();
+            p.v.set(0,0,0);
+        });
+    }
+
+    function setupAI() {
+        const video = document.getElementById('webcam');
+        const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6});
+        
+        hands.onResults(res => {
+            if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                const lm = res.multiHandLandmarks[0];
+                const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
+                if(dist > 0.42 && !isExploded) explode();
+                if(dist < 0.25 && isExploded) contract();
+            }
+        });
+
+        const cam = new Camera(video, {
+            onFrame: async () => { await hands.send({image: video}); },
+            width: 480, height: 640
+        });
+        
+        cam.start().then(() => {
+            document.getElementById('loader').style.display = 'none';
+        }).catch(() => {
+            document.getElementById('loader-status').innerText = "摄像头无法启动，已切换为触摸模式";
+            setTimeout(() => document.getElementById('loader').style.display = 'none', 1500);
+        });
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        TWEEN.update();
+        const t = Date.now() * 0.001;
+
+        if(!isExploded) {
+            const s = 1 + Math.sin(t*2.8)*0.025;
+            scene.scale.set(s,s,s);
+        } else {
+            photos.forEach(p => {
+                p.mesh.position.add(p.v);
+                p.mesh.rotation.y += 0.004;
+            });
+        }
+
+        camera.position.x += (targetRot.y * 22 - camera.position.x) * 0.06;
+        camera.position.y += (-targetRot.x * 22 - camera.position.y) * 0.06;
+        camera.lookAt(0,0,0);
+        
+        particles.rotation.y += 0.0008;
+        coreLight.intensity = 2.5 + Math.sin(t*3.5);
+        renderer.render(scene, camera);
+    }
+
+    window.onresize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    window.onload = init;
+</script>
+</body>
+</html>

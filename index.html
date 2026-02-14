@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Our 3D Heart Space</title>
-    <!-- 恢复为官方标准 CDN 链接 -->
+    <!-- 核心 3D 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
     
-    <!-- 官方 MediaPipe Hands 库 -->
+    <!-- MediaPipe AI 库 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
@@ -26,16 +26,15 @@
         }
         .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
         
-        #video-container {
-            display: none;
-        }
-        video { width: 1px; height: 1px; opacity: 0; position: absolute; }
+        /* 隐藏视频流但保持运行 */
+        #video-container { position: fixed; bottom: 10px; right: 10px; width: 80px; height: 60px; opacity: 0.3; border: 1px solid var(--gold); border-radius: 8px; overflow: hidden; transform: scaleX(-1); display: none; }
+        video { width: 100%; height: 100%; object-fit: cover; }
 
         #gesture-hint {
             position: absolute;
             bottom: 40px; width: 100%;
             text-align: center;
-            color: #fff; opacity: 0.4;
+            color: #fff; opacity: 0.5;
             font-size: 11px;
             letter-spacing: 1px;
             z-index: 5;
@@ -65,9 +64,13 @@
             transition: all 0.3s;
             -webkit-appearance: none;
         }
-        #start-btn:active {
-            background: var(--gold);
-            color: #000;
+
+        /* 手势反馈光圈 */
+        #gesture-feedback {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            padding: 5px 15px; border-radius: 20px; background: rgba(212,175,55,0.2);
+            color: var(--gold); font-size: 12px; border: 1px solid var(--gold);
+            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 20;
         }
     </style>
 </head>
@@ -75,9 +78,11 @@
 
 <div id="loader">
     <div class="pulse-heart">✨❤️✨</div>
-    <div id="loader-status" style="font-size: 14px; letter-spacing: 2px; line-height: 1.6;">AI 核心正在初始化<br>请确保处于网络顺畅的环境</div>
-    <button id="start-btn">开启艺术空间</button>
+    <div id="loader-status">正在初始化 AI 艺术空间...</div>
+    <button id="start-btn" style="display:none;">开启空间</button>
 </div>
+
+<div id="gesture-feedback">检测到手势</div>
 
 <div id="ui-container">
     <div class="title">MEMORIES SPACE</div>
@@ -88,7 +93,7 @@
     <video id="webcam" playsinline muted></video>
 </div>
 
-<div id="gesture-hint">🖐️ 张开爆炸 | ✊ 握拳回收 | 📱 倾斜手机互动</div>
+<div id="gesture-hint">🖐️ 五指张开爆炸 | ✊ 握拳聚合<br>📱 倾斜手机互动 | 👆 点击屏幕</div>
 
 <div id="canvas-container"></div>
 
@@ -97,13 +102,10 @@
     let isExploded = false;
     let coreLight;
     let targetRot = { x: 0, y: 0 };
+    let handsAI;
 
-    /**
-     * 照片 URL 配置
-     * 已更新为优先读取你上传的 1.jpg
-     */
     const photoUrls = [
-        '1.jpg', // 你上传的照片
+        '1.jpg', 
         'https://picsum.photos/400/520?random=2',
         'https://picsum.photos/400/520?random=3',
         'https://picsum.photos/400/520?random=4',
@@ -125,7 +127,7 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
         coreLight = new THREE.PointLight(0xffb6c1, 2.5, 60);
         scene.add(coreLight);
 
@@ -154,9 +156,7 @@
             const pos = getHeart(t);
             const geo = new THREE.BoxGeometry(4, 5.2, 0.3);
             
-            // 循环使用照片数组
             const texture = textureLoader.load(photoUrls[i % photoUrls.length]);
-
             const mats = [
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
@@ -172,17 +172,17 @@
             scene.add(mesh);
         }
 
+        document.getElementById('loader-status').innerText = "资源已就绪，建议在光线充足处使用";
+        document.getElementById('start-btn').style.display = "block";
         animate();
     }
 
     document.getElementById('start-btn').onclick = async function() {
-        this.innerText = "正在激活 AI 模型...";
-        this.disabled = true;
+        this.innerText = "请求权限中...";
         
+        // 尝试启动陀螺仪
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
-                await DeviceOrientationEvent.requestPermission();
-            } catch (e) { console.error("Permission denied"); }
+            try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
         }
 
         window.addEventListener('deviceorientation', e => {
@@ -192,43 +192,58 @@
             }
         });
 
-        setupAI();
+        // 尝试启动相机和 AI
+        await setupAI();
         
-        setTimeout(() => {
-            document.getElementById('loader').style.opacity = '0';
-            setTimeout(() => {
-                document.getElementById('loader').style.display = 'none';
-            }, 500);
-        }, 1500);
+        document.getElementById('loader').style.opacity = '0';
+        setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
     };
 
-    function setupAI() {
+    async function setupAI() {
         const video = document.getElementById('webcam');
+        const feedback = document.getElementById('gesture-feedback');
+
         try {
-            const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            hands.setOptions({
+            handsAI = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+            handsAI.setOptions({
                 maxNumHands: 1,
                 modelComplexity: 1,
-                minDetectionConfidence: 0.7
+                minDetectionConfidence: 0.5, // 降低阈值以提高识别率
+                minTrackingConfidence: 0.5
             });
             
-            hands.onResults(res => {
+            handsAI.onResults(res => {
                 if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                     const lm = res.multiHandLandmarks[0];
+                    
+                    // 核心逻辑：计算指尖到掌心的平均距离
+                    // lm[0] 是手腕, lm[12] 是中指尖
                     const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                    if(dist > 0.42 && !isExploded) explode();
-                    if(dist < 0.25 && isExploded) contract();
+                    
+                    // 显示手势反馈
+                    feedback.style.opacity = "1";
+                    
+                    if(dist > 0.4) {
+                        feedback.innerText = "🖐️ 爆炸";
+                        if(!isExploded) explode();
+                    } else if(dist < 0.25) {
+                        feedback.innerText = "✊ 回收";
+                        if(isExploded) contract();
+                    }
+                } else {
+                    feedback.style.opacity = "0";
                 }
             });
 
             const cam = new Camera(video, {
-                onFrame: async () => { await hands.send({image: video}); },
+                onFrame: async () => { await handsAI.send({image: video}); },
                 width: 480, height: 640
             });
             
-            cam.start();
+            await cam.start();
+            document.getElementById('video-container').style.display = 'block';
         } catch (e) {
-            console.error("AI Init Error:", e);
+            console.error("AI 启动失败，将仅支持点击交互:", e);
         }
     }
 

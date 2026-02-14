@@ -1,17 +1,20 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Our 3D Heart Space</title>
-    <!-- 使用全路径 CDN 确保 GitHub 环境兼容性 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <!-- 替换为国内镜像加速源 (Staticfile / BootCDN) -->
+    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/three.js/r128/three.min.js"></script>
+    <script src="https://lf9-cdn-tos.bytecdntp.com/cdn/expire-1-M/tween.js/18.6.4/tween.umd.js"></script>
+    
+    <!-- MediaPipe 库也使用 jsDelivr 的镜像或直接通过特定地址绕过限制 -->
+    <script src="https://fastly.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://fastly.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    
     <style>
         :root { --rose-gold: #b76e79; --gold: #d4af37; }
-        body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
         #ui-container {
             position: absolute;
@@ -23,18 +26,11 @@
         }
         .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
         
+        /* 隐藏视频预览容器，但保留视频元素供 AI 计算 */
         #video-container {
-            position: absolute;
-            bottom: 30px; left: 20px;
-            width: 80px; height: 100px;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid var(--rose-gold);
-            transform: scaleX(-1);
-            background: #111;
-            z-index: 20;
+            display: none;
         }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        video { width: 1px; height: 1px; opacity: 0; position: absolute; }
 
         #gesture-hint {
             position: absolute;
@@ -50,22 +46,29 @@
             position: fixed; inset: 0; background: #020205;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             z-index: 100; color: var(--gold);
+            padding: 20px;
+            text-align: center;
         }
         .pulse-heart {
             font-size: 48px; animation: pulse 1.2s infinite ease-in-out; margin-bottom: 20px;
         }
         @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 0.8; } }
         
-        /* 交互按钮，应对部分浏览器权限 */
         #start-btn {
-            margin-top: 20px;
-            padding: 10px 25px;
+            margin-top: 30px;
+            padding: 12px 35px;
             background: transparent;
             border: 1px solid var(--gold);
             color: var(--gold);
-            border-radius: 20px;
+            border-radius: 25px;
             cursor: pointer;
-            display: none; /* 仅在权限受阻时显示 */
+            font-size: 16px;
+            transition: all 0.3s;
+            -webkit-appearance: none;
+        }
+        #start-btn:active {
+            background: var(--gold);
+            color: #000;
         }
     </style>
 </head>
@@ -73,8 +76,8 @@
 
 <div id="loader">
     <div class="pulse-heart">✨❤️✨</div>
-    <div id="loader-status" style="font-size: 13px; letter-spacing: 2px;">初始化 3D 艺术空间...</div>
-    <button id="start-btn">点击进入</button>
+    <div id="loader-status" style="font-size: 14px; letter-spacing: 2px; line-height: 1.6;">本地网络优化版<br>准备好开启空间了吗？</div>
+    <button id="start-btn">开启纪念空间</button>
 </div>
 
 <div id="ui-container">
@@ -82,6 +85,7 @@
     <div style="font-size: 11px; opacity: 0.6; margin-top: 8px;">让思念跨越星辰</div>
 </div>
 
+<!-- 视频元素依然存在用于手势识别，但已设为隐藏 -->
 <div id="video-container">
     <video id="webcam" playsinline muted></video>
 </div>
@@ -97,7 +101,7 @@
     let targetRot = { x: 0, y: 0 };
     const COUNT = 34;
 
-    function init() {
+    function initScene() {
         scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x000000, 0.015);
 
@@ -113,17 +117,16 @@
         coreLight = new THREE.PointLight(0xffb6c1, 2.5, 60);
         scene.add(coreLight);
 
-        // 星空背景
+        // 星空
         const starGeo = new THREE.BufferGeometry();
         const starPos = [];
-        for(let i=0; i<2000; i++) {
+        for(let i=0; i<1500; i++) {
             starPos.push((Math.random()-0.5)*250, (Math.random()-0.5)*250, (Math.random()-0.5)*250);
         }
         starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
         particles = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 0.4, transparent: true, opacity: 0.6}));
         scene.add(particles);
 
-        // 爱心轨迹
         const getHeart = (t) => {
             return new THREE.Vector3(
                 16 * Math.pow(Math.sin(t), 3),
@@ -151,20 +154,19 @@
             scene.add(mesh);
         }
 
-        // 处理 iOS 权限
-        const handlePermissions = () => {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission().catch(console.error);
-            }
-            setupAI();
-        };
+        animate();
+    }
 
-        document.getElementById('start-btn').onclick = () => {
-            document.getElementById('start-btn').style.display = 'none';
-            handlePermissions();
-        };
+    document.getElementById('start-btn').onclick = async function() {
+        this.innerText = "正在激活权限...";
+        this.disabled = true;
+        
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                await DeviceOrientationEvent.requestPermission();
+            } catch (e) { console.error("Permission denied"); }
+        }
 
-        // 手机倾斜互动
         window.addEventListener('deviceorientation', e => {
             if(e.gamma !== null) {
                 targetRot.y = (e.gamma / 45);
@@ -172,27 +174,46 @@
             }
         });
 
-        // 触摸兜底
-        window.addEventListener('touchstart', (e) => {
-            if (e.target.tagName !== 'BUTTON') {
-                isExploded ? contract() : explode();
-            }
-        });
-
-        animate();
+        setupAI();
         
-        // 自动尝试开启，若失败则显示按钮
         setTimeout(() => {
-            if(document.getElementById('loader').style.display !== 'none') {
-                document.getElementById('loader-status').innerText = "请点击下方按钮授予权限";
-                document.getElementById('start-btn').style.display = 'block';
-            }
-        }, 3000);
+            document.getElementById('loader').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('loader').style.display = 'none';
+            }, 500);
+        }, 1200);
+    };
 
-        handlePermissions(); 
+    function setupAI() {
+        const video = document.getElementById('webcam');
+        try {
+            const hands = new Hands({locateFile: (f) => `https://fastly.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+            hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6});
+            
+            hands.onResults(res => {
+                if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                    const lm = res.multiHandLandmarks[0];
+                    const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
+                    if(dist > 0.42 && !isExploded) explode();
+                    if(dist < 0.25 && isExploded) contract();
+                }
+            });
+
+            const cam = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                width: 480, height: 640
+            });
+            
+            cam.start().catch(() => {
+                console.log("No camera access, touch only.");
+            });
+        } catch (e) {
+            console.warn("AI models could not be loaded.");
+        }
     }
 
     function explode() {
+        if (isExploded) return;
         isExploded = true;
         photos.forEach(p => {
             const dest = new THREE.Vector3((Math.random()-0.5)*130, (Math.random()-0.5)*130, (Math.random()-0.5)*90);
@@ -203,6 +224,7 @@
     }
 
     function contract() {
+        if (!isExploded) return;
         isExploded = false;
         photos.forEach(p => {
             new TWEEN.Tween(p.mesh.position).to(p.homePos, 1300).easing(TWEEN.Easing.Cubic.InOut).start();
@@ -211,32 +233,11 @@
         });
     }
 
-    function setupAI() {
-        const video = document.getElementById('webcam');
-        const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6});
-        
-        hands.onResults(res => {
-            if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
-                const lm = res.multiHandLandmarks[0];
-                const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                if(dist > 0.42 && !isExploded) explode();
-                if(dist < 0.25 && isExploded) contract();
-            }
-        });
-
-        const cam = new Camera(video, {
-            onFrame: async () => { await hands.send({image: video}); },
-            width: 480, height: 640
-        });
-        
-        cam.start().then(() => {
-            document.getElementById('loader').style.display = 'none';
-        }).catch(() => {
-            document.getElementById('loader-status').innerText = "摄像头无法启动，已切换为触摸模式";
-            setTimeout(() => document.getElementById('loader').style.display = 'none', 1500);
-        });
-    }
+    window.addEventListener('touchstart', (e) => {
+        if (document.getElementById('loader').style.display === 'none') {
+            isExploded ? contract() : explode();
+        }
+    });
 
     function animate() {
         requestAnimationFrame(animate);
@@ -268,7 +269,7 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
     };
 
-    window.onload = init;
+    window.onload = initScene;
 </script>
 </body>
 </html>

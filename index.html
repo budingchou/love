@@ -36,7 +36,7 @@
             right: 20px; 
             width: 80px; 
             height: 60px; 
-            opacity: 0.3; 
+            opacity: 0.2; 
             border: 1px solid var(--gold); 
             border-radius: 8px; 
             overflow: hidden; 
@@ -82,22 +82,23 @@
 <body>
 
 <div id="loader">
-    <div style="font-size: 30px; margin-bottom: 20px;">❤️</div>
-    <div id="loader-status">正在准备极简空间...</div>
-    <button id="start-btn" style="display:none;">立即进入</button>
+    <div style="font-size: 30px; margin-bottom: 20px;">📷</div>
+    <div id="loader-status">正在高清化照片空间...</div>
+    <button id="start-btn" style="display:none;">开启高清体验</button>
 </div>
 
 <div id="gesture-feedback">准备中</div>
 
 <div id="ui-container">
     <div class="title">MEMORIES SPACE</div>
+    <div style="font-size: 10px; margin-top: 5px; opacity: 0.5;">🖐️ 缩放 | ✊ 收回 | ↔️ 滑动旋转</div>
 </div>
 
 <div id="video-container">
     <video id="webcam" playsinline muted autoplay></video>
 </div>
 
-<div id="gesture-hint">🖐️ 实时展开 | ✊ 握拳归位</div>
+<div id="gesture-hint">左右滑动屏幕可手动旋转视角</div>
 
 <div id="canvas-container"></div>
 
@@ -105,8 +106,11 @@
     let scene, camera, renderer, particles, photos = [];
     let currentExplodeFactor = 0;
     let targetExplodeFactor = 0;
-    let coreLight;
-    let targetRot = { x: 0, y: 0 };
+    let autoRotationY = 0;
+    let userRotationY = 0;
+    let isTouching = false;
+    let lastTouchX = 0;
+    let handX = 0; // 手部在屏幕上的偏移
 
     const photoUrls = [
         '1.jpg', 
@@ -182,30 +186,28 @@
         '72.jpg',
     ];
 
-    const COUNT = 30; // 略微减少数量提升性能
+    const COUNT = 30;
 
     function initScene() {
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 55;
 
-        renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setPixelRatio(1); // 限制像素比提升性能
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(window.devicePixelRatio); // 恢复高清像素比
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
-        coreLight = new THREE.PointLight(0xffb6c1, 2, 80);
-        scene.add(coreLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 1.2));
 
         // 基础粒子
         const starGeo = new THREE.BufferGeometry();
         const starPos = [];
-        for(let i=0; i<800; i++) {
-            starPos.push((Math.random()-0.5)*250, (Math.random()-0.5)*250, (Math.random()-0.5)*250);
+        for(let i=0; i<1000; i++) {
+            starPos.push((Math.random()-0.5)*300, (Math.random()-0.5)*300, (Math.random()-0.5)*300);
         }
         starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
-        particles = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0x666666, size: 0.5}));
+        particles = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xaaaaaa, size: 0.3}));
         scene.add(particles);
 
         const getHeart = (t) => {
@@ -220,15 +222,22 @@
         for(let i=0; i<COUNT; i++){
             const t = (i/COUNT) * Math.PI * 2;
             const pos = getHeart(t);
-            const geo = new THREE.BoxGeometry(4, 5.2, 0.2);
-            const texture = textureLoader.load(photoUrls[i % photoUrls.length]);
+            const geo = new THREE.BoxGeometry(4, 5.2, 0.1);
+            
+            // 加载纹理并设置高清过滤
+            const texture = textureLoader.load(photoUrls[i % photoUrls.length], (tex) => {
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            });
+
             const mats = [
                 new THREE.MeshBasicMaterial({color: 0xb76e79}), 
                 new THREE.MeshBasicMaterial({color: 0xb76e79}), 
                 new THREE.MeshBasicMaterial({color: 0xb76e79}), 
                 new THREE.MeshBasicMaterial({color: 0xb76e79}), 
                 new THREE.MeshBasicMaterial({map: texture}), 
-                new THREE.MeshBasicMaterial({color: 0x111111})  
+                new THREE.MeshBasicMaterial({color: 0x000000})  
             ];
             const mesh = new THREE.Mesh(geo, mats);
             mesh.position.copy(pos);
@@ -238,11 +247,33 @@
                 mesh, 
                 homePos: pos.clone(), 
                 homeRot: mesh.rotation.clone(), 
-                targetPos: new THREE.Vector3((Math.random()-0.5)*120, (Math.random()-0.5)*120, (Math.random()-0.5)*80),
-                targetRot: new THREE.Euler(Math.random()*2, Math.random()*2, Math.random()*2)
+                // 增加随机性让划过屏幕的感觉更自然
+                targetPos: new THREE.Vector3((Math.random()-0.5)*150, (Math.random()-0.5)*150, (Math.random()-0.5)*100),
+                targetRot: new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI),
+                driftOffset: Math.random() * 20
             });
             scene.add(mesh);
         }
+
+        // 交互监听：手动旋转
+        window.addEventListener('mousedown', (e) => { isTouching = true; lastTouchX = e.clientX; });
+        window.addEventListener('mousemove', (e) => {
+            if(isTouching) {
+                const deltaX = e.clientX - lastTouchX;
+                userRotationY += deltaX * 0.01;
+                lastTouchX = e.clientX;
+            }
+        });
+        window.addEventListener('mouseup', () => isTouching = false);
+        window.addEventListener('touchstart', (e) => { isTouching = true; lastTouchX = e.touches[0].clientX; });
+        window.addEventListener('touchmove', (e) => {
+            if(isTouching) {
+                const deltaX = e.touches[0].clientX - lastTouchX;
+                userRotationY += deltaX * 0.01;
+                lastTouchX = e.touches[0].clientX;
+            }
+        });
+        window.addEventListener('touchend', () => isTouching = false);
 
         document.getElementById('loader-status').innerText = "已就绪";
         document.getElementById('start-btn').style.display = "block";
@@ -261,20 +292,23 @@
 
         try {
             const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5 }); // 使用 modelComplexity 0 降低能耗
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
             
             hands.onResults(res => {
                 if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
                     const lm = res.multiHandLandmarks[0];
                     const dist = Math.hypot(lm[12].x - lm[0].x, lm[12].y - lm[0].y);
-                    feedback.style.opacity = "1";
                     
+                    // 记录手部水平位置，用于控制照片“划过”
+                    handX = (lm[0].x - 0.5) * 60; 
+
+                    feedback.style.opacity = "1";
                     let factor = (dist - 0.28) / (0.52 - 0.28);
                     factor = Math.max(0, Math.min(1, factor));
                     if(dist < 0.26) factor = 0;
                     
                     targetExplodeFactor = factor;
-                    feedback.innerText = factor > 0.1 ? "🖐️ 展开中" : "✊ 已收拢";
+                    feedback.innerText = factor > 0.1 ? "🖐️ 正在绽放" : "✊ 握紧守护";
                 } else {
                     feedback.style.opacity = "0";
                 }
@@ -282,7 +316,7 @@
 
             const cam = new Camera(video, {
                 onFrame: async () => { await hands.send({image: video}); },
-                width: 320, height: 240 // 降低识别分辨率提升流畅度
+                width: 480, height: 360
             });
             await cam.start();
         } catch (e) { console.error(e); }
@@ -293,15 +327,27 @@
         TWEEN.update();
 
         currentExplodeFactor += (targetExplodeFactor - currentExplodeFactor) * 0.1;
+        
+        // 自动旋转基础量
+        autoRotationY += 0.002;
 
         photos.forEach(p => {
+            // 位置：结合爆炸系数和手部实时水平位置，实现“划过屏幕”感
+            const driftX = handX * currentExplodeFactor;
             p.mesh.position.lerpVectors(p.homePos, p.targetPos, currentExplodeFactor);
+            p.mesh.position.x += driftX; 
+
+            // 旋转：手动旋转 + 自动旋转 + 爆炸后的乱序旋转
             p.mesh.rotation.x = p.homeRot.x + (p.targetRot.x - p.homeRot.x) * currentExplodeFactor;
-            p.mesh.rotation.y = p.homeRot.y + (p.targetRot.y - p.homeRot.y) * currentExplodeFactor;
             p.mesh.rotation.z = p.homeRot.z + (p.targetRot.z - p.homeRot.z) * currentExplodeFactor;
+            
+            // 每一个照片都在自己的 Y 轴上受控于全局旋转
+            p.mesh.rotation.y = p.homeRot.y + (p.targetRot.y - p.homeRot.y) * currentExplodeFactor + (userRotationY + autoRotationY);
         });
 
-        particles.rotation.y += 0.001;
+        // 整个粒子背景也跟随旋转
+        particles.rotation.y = (userRotationY + autoRotationY) * 0.5;
+
         renderer.render(scene, camera);
     }
 

@@ -26,7 +26,6 @@
         }
         .title { font-size: 24px; font-weight: 200; letter-spacing: 6px; text-shadow: 0 0 15px rgba(212,175,55,0.6); }
         
-        /* 隐藏视频预览容器，但保留视频元素供 AI 计算 */
         #video-container {
             display: none;
         }
@@ -85,7 +84,6 @@
     <div style="font-size: 11px; opacity: 0.6; margin-top: 8px;">让思念跨越星辰</div>
 </div>
 
-<!-- 视频元素依然存在用于手势识别，但已设为隐藏 -->
 <div id="video-container">
     <video id="webcam" playsinline muted></video>
 </div>
@@ -99,7 +97,24 @@
     let isExploded = false;
     let coreLight;
     let targetRot = { x: 0, y: 0 };
-    const COUNT = 34;
+
+    /**
+     * 在这里添加你的照片 URL
+     * 如果照片在 GitHub 仓库根目录，直接写 '1.jpg'
+     * 也可以使用网络链接
+     */
+    const photoUrls = [
+        'https://picsum.photos/400/520?random=1',
+        'https://picsum.photos/400/520?random=2',
+        'https://picsum.photos/400/520?random=3',
+        'https://picsum.photos/400/520?random=4',
+        'https://picsum.photos/400/520?random=5',
+        'https://picsum.photos/400/520?random=6',
+        'https://picsum.photos/400/520?random=7',
+        'https://picsum.photos/400/520?random=8'
+    ];
+
+    const COUNT = 34; // 卡片总数
 
     function initScene() {
         scene = new THREE.Scene();
@@ -135,17 +150,23 @@
             ).multiplyScalar(1.2);
         };
 
+        const textureLoader = new THREE.TextureLoader();
+
         for(let i=0; i<COUNT; i++){
             const t = (i/COUNT) * Math.PI * 2;
             const pos = getHeart(t);
             const geo = new THREE.BoxGeometry(4, 5.2, 0.3);
+            
+            // 循环使用照片数组中的图片
+            const texture = textureLoader.load(photoUrls[i % photoUrls.length]);
+
             const mats = [
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), // 侧面
                 new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
-                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
-                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
-                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}),
-                new THREE.MeshStandardMaterial({color: 0xfffafa, roughness: 0.4}), 
-                new THREE.MeshStandardMaterial({color: 0x050505})
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
+                new THREE.MeshStandardMaterial({color: 0xb76e79, metalness: 0.8}), 
+                new THREE.MeshStandardMaterial({map: texture}), // 正面（显示照片）
+                new THREE.MeshStandardMaterial({color: 0x050505})  // 背面
             ];
             const mesh = new THREE.Mesh(geo, mats);
             mesh.position.copy(pos);
